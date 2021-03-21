@@ -11,9 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
+
+	"github.com/miekg/dns"
 )
 
 const (
@@ -49,22 +50,15 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		}
 	}
 
-	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
+	if !strings.HasSuffix(trimDot(entry.HostName), trimDot(entry.Domain)) {
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
+	}
+	if !strings.HasSuffix(entry.HostName, ".") {
+		entry.HostName = fmt.Sprintf("%s.", entry.HostName)
 	}
 
 	if len(ifaces) == 0 {
 		ifaces = listMulticastInterfaces()
-	}
-
-	for _, iface := range ifaces {
-		v4, v6 := addrsForInterface(&iface)
-		entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
-		entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
-	}
-
-	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
-		return nil, fmt.Errorf("Could not determine host IP addresses")
 	}
 
 	s, err := newServer(ifaces)
@@ -103,8 +97,11 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		return nil, fmt.Errorf("Missing port")
 	}
 
-	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
+	if !strings.HasSuffix(trimDot(entry.HostName), trimDot(entry.Domain)) {
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
+	}
+	if !strings.HasSuffix(entry.HostName, ".") {
+		entry.HostName = fmt.Sprintf("%s.", entry.HostName)
 	}
 
 	for _, ip := range ips {
@@ -215,6 +212,9 @@ func (s *Server) shutdown() error {
 	}
 
 	err := s.unregister()
+	if err != nil {
+		return err
+	}
 
 	close(s.shouldShutdown)
 
@@ -229,7 +229,7 @@ func (s *Server) shutdown() error {
 	s.shutdownEnd.Wait()
 	s.isShutdown = true
 
-	return err
+	return nil
 }
 
 // recv is a long running routine to receive packets from an interface
@@ -374,6 +374,10 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 	}
 
 	switch q.Name {
+	case s.service.HostName:
+		if q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA {
+			resp.Answer = s.appendAddrs(resp.Answer, s.ttl, ifIndex, false)
+		}
 	case s.service.ServiceTypeName():
 		s.serviceTypeName(resp, s.ttl)
 		if isKnownAnswer(resp, query) {
@@ -388,18 +392,6 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 
 	case s.service.ServiceInstanceName():
 		s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
-	default:
-		// handle matching subtype query
-		for _, subtype := range s.service.Subtypes {
-			subtype = fmt.Sprintf("%s._sub.%s", subtype, s.service.ServiceName())
-			if q.Name == subtype {
-				s.composeBrowsingAnswers(resp, ifIndex)
-				if isKnownAnswer(resp, query) {
-					resp.Answer = nil
-				}
-				break
-			}
-		}
 	}
 
 	return nil
@@ -489,19 +481,6 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int, fl
 		Ptr: s.service.ServiceName(),
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
-
-	for _, subtype := range s.service.Subtypes {
-		resp.Answer = append(resp.Answer,
-			&dns.PTR{
-				Hdr: dns.RR_Header{
-					Name:   subtype,
-					Rrtype: dns.TypePTR,
-					Class:  dns.ClassINET,
-					Ttl:    ttl,
-				},
-				Ptr: s.service.ServiceInstanceName(),
-			})
-	}
 
 	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex, flushCache)
 }
