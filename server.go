@@ -254,7 +254,7 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 				ifIndex = cm.IfIndex
 			}
 			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				log.Printf("[WARN] zeroconf: failed to handle query v4: %v", err)
+				Warn("failed to handle query v4", err)
 			}
 		}
 	}
@@ -282,7 +282,7 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 				ifIndex = cm.IfIndex
 			}
 			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				log.Printf("[WARN] zeroconf: failed to handle query v6: %v", err)
+				Warn("failed to handle query v6", err)
 			}
 		}
 	}
