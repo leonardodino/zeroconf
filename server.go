@@ -188,14 +188,14 @@ func (s *Server) mainloop() {
 }
 
 // Shutdown closes all udp connections and unregisters the service
-func (s *Server) Shutdown() {
-	s.shutdown()
+func (s *Server) Shutdown() error {
+	return s.shutdown()
 }
 
 // SetText updates and announces the TXT records
-func (s *Server) SetText(text []string) {
+func (s *Server) SetText(text []string) error {
 	s.service.Text = text
-	s.announceText()
+	return s.announceText()
 }
 
 // TTL sets the TTL for DNS replies
@@ -571,7 +571,7 @@ func (s *Server) probe() {
 }
 
 // announceText sends a Text announcement with cache flush enabled
-func (s *Server) announceText() {
+func (s *Server) announceText() error {
 	resp := new(dns.Msg)
 	resp.MsgHdr.Response = true
 
@@ -586,7 +586,7 @@ func (s *Server) announceText() {
 	}
 
 	resp.Answer = []dns.RR{txt}
-	s.multicastResponse(resp, 0)
+	return s.multicastResponse(resp, 0)
 }
 
 func (s *Server) unregister() error {
